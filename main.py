@@ -1,5 +1,6 @@
 from fastapi import FastAPI;
 from enum import Enum
+from typing import Optional
 app = FastAPI()
 
 @app.get("/")
@@ -32,3 +33,29 @@ class SubscriptionPlan(str,Enum):
 @app.get("/user/subscription/{plan}")
 def get_subscription(plan:SubscriptionPlan):
     return {"message":f"The subscription plan is {plan.value}"}
+
+
+# Query Paramers 
+@app.get("/products")
+def get_products(
+    page: int = 1,
+    category: Optional[str] = None,
+    in_stock: Optional[bool] = True
+):
+    return {
+        "message": f"Fetching products in category '{category}', in stock: {in_stock} on page {page}"
+    }
+
+@app.get("/products/search")
+def search_products(
+    category: Optional[str] = None,
+    min_price: Optional[float] = None,
+    max_price: Optional[float] = None,
+    sort_by: Optional[str] = "price",
+    order: Optional[str] = "asc",
+    page: Optional[int] = 1,
+    page_size: Optional[int] = 10
+):
+    return {
+        "message": f"Fetching products in category '{category}' with price between {min_price}-{max_price}, sorted by {sort_by} in {order} order, page {page} with {page_size} items per page"
+    }
