@@ -1,4 +1,4 @@
-from fastapi import FastAPI;
+from fastapi import FastAPI, Response,status;
 from enum import Enum
 from typing import Optional
 app = FastAPI()
@@ -12,8 +12,13 @@ def get_all_user():
     
 # Dynamic Route
 @app.get("/user/{userName}")
-def get_userName(userName:str):
-    return {"message":f"The user name is {userName}"}
+# Adding Response status code
+def get_userName(userName:str,response:Response):
+    if userName == "sdupadhyay":
+        response.status_code = status.HTTP_200_OK
+        return {"message":f"The user name is {userName}"}
+    response.status_code = status.HTTP_404_NOT_FOUND
+    return {"message":f"The user name is is not Found"}
 
 class UserRole(str,Enum):
      admin = "admin"
