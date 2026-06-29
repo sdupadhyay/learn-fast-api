@@ -60,7 +60,7 @@ def get_all_user():
 **In `main.py`:**
 ```python
 from fastapi import FastAPI
-from routers import user_get_routes, product_routes, product_post
+from routers import user_get_routes, product_routes, product_post, user_post_routes
 
 app = FastAPI()
 
@@ -68,6 +68,7 @@ app = FastAPI()
 app.include_router(user_get_routes.router)
 app.include_router(product_routes.router)
 app.include_router(product_post.router)
+app.include_router(user_post_routes.router)  # New POST routes router
 ```
 
 ---
@@ -77,19 +78,17 @@ app.include_router(product_post.router)
 Path parameters are dynamic parts of the URL. They are defined using curly braces `{}` in the route decorator and must match the function argument names.
 
 ### 📝 Key Concepts
-*   **Type Hinting**: FastAPI automatically parses and validates the type (e.g., `userName: str`, `product_id: int`). If the type doesn't match, it returns a `422 Unprocessable Entity` error automatically.
-*   **Enum Validation**: You can restrict path parameter values to a specific set using Python's `Enum`.
+*   **Type Hinting**: FastAPI automatically parses and validates the type (e.g., `userName: str`, `product_id: int`).
+*   **Enum Validation**: Restricts path parameter values to a specific set using Python's `Enum`.
+*   **`Path` Validation & Metadata**: You can use `Path` from `fastapi` to add metadata (like `title` and `description`) and numeric validation constraints:
+    *   `gt`: Greater than
+    *   `ge`: Greater than or equal to (e.g., `ge=1`)
+    *   `lt`: Less than
+    *   `le`: Less than or equal to (e.g., `le=5`)
 
 ### 💻 Code Example
 
-#### Basic Path Parameter
-```python
-@router.get("/{userName}")
-def get_userName(userName: str):
-    return {"message": f"The user name is {userName}"}
-```
-
-#### Path Parameter restricted by Enums
+#### Basic Path Parameter with Enum
 ```python
 from enum import Enum
 
@@ -98,10 +97,26 @@ class UserRole(str, Enum):
     editor = "editor"
     viewer = "viewer"
 
-# FastAPI will only accept /user/role/admin, /user/role/editor, or /user/role/viewer
 @router.get("/role/{role}")
 def get_user(role: UserRole):
     return {"message": f"The user role is {role.value}"}
+```
+
+#### Advanced Path Parameter Validation using `Path`
+```python
+from fastapi import Path
+
+@router.post("/{product_id}")
+def create_product(
+    product_id: int = Path(
+        ...,                             # '...' means the parameter is required
+        title="The Product ID",
+        description="The unique identifier of the product",
+        ge=1,                            # Must be >= 1
+        le=5,                            # Must be <= 5
+    )
+):
+    return {"product_id": product_id}
 ```
 
 ---
@@ -146,31 +161,52 @@ To receive JSON data from the client, you use **Pydantic** models. Pydantic vali
 ### 📝 Key Concepts
 *   **`BaseModel`**: The base class for defining schemas.
 *   **`Body(...)`**: Used to declare a single, raw body parameter with validation rules (like `min_length`, `max_length`).
+*   **Nested Pydantic Models**: You can use a Pydantic model as a type inside another Pydantic model to handle nested JSON structures.
+*   **Specialized Types (`EmailStr`)**: You can use `EmailStr` for email validation (requires `pydantic[email]` package to be installed).
+*   **Complex Collections**: Define types using `List[str]`, `Dict[str, str]`, etc.
 
 ### 💻 Code Example
 
+#### Basic Model & Body Parameter
 ```python
 from pydantic import BaseModel
 from fastapi import Body
-from typing import Optional
 
-# Define the schema for the request body
 class ProductModel(BaseModel):
     name: str
     price: int
 
 @router.post("/{product_id}")
 def create_product(
-    product_id: int,                       # Path Parameter
-    in_stock: Optional[bool] = True,       # Query Parameter
-    product: ProductModel = None,          # Request Body (JSON)
-    content: str = Body(..., min_length=5, max_length=15) # Singular Body Field
+    product: ProductModel = None,
+    content: str = Body(..., min_length=5, max_length=15)
 ):
-    return {
-        "product_id": product_id,
-        "product_details": product,
-        "content": content
-    }
+    return {"product": product, "content": content}
+```
+
+#### Nested Models, Lists, Dicts & EmailStr
+```python
+from typing import Optional, List, Dict
+from pydantic import BaseModel, EmailStr
+
+# 1. Nested Model
+class Address(BaseModel):
+    city: str
+    state: str
+    pincode: int
+
+# 2. Main Model
+class UserCreate(BaseModel):
+    name: str
+    email: EmailStr                      # Validates email format (requires: pip install pydantic[email])
+    is_active: Optional[bool] = None
+    roles: List[str]                     # List of strings
+    settings: Dict[str, str]             # Key-Value pairs of strings
+    address: Optional[Address] = None    # Nested Pydantic Model (optional)
+
+@router.post("/create")
+def create_user(user: UserCreate):
+    return {"message": "User created successfully", "user": user}
 ```
 
 ---
@@ -202,11 +238,14 @@ def get_userName(userName: str, response: Response):
 
 ## 📖 Quick Reference Cheat Sheet
 
-| Feature | Syntax Example | Use Case |
+| Feature | Syntax Example | Use Case / Constraints |
 | :--- | :--- | :--- |
 | **Path Parameter** | `/items/{item_id}` | Identifying a specific resource. |
+| **Path Validation** | `item_id: int = Path(..., ge=1, le=5)` | Restricting path variables numerically. |
 | **Query Parameter** | `/items?limit=10` | Filtering, sorting, or paginating results. |
 | **Request Body** | `item: ItemModel` | Creating or updating resources with structured JSON. |
+| **Nested Models** | `address: Optional[Address]` | Handling complex, nested JSON payloads. |
+| **Specialized Types** | `email: EmailStr` | Out-of-the-box email validation. |
 | **Enum Parameter** | `role: UserRole` | Restricting inputs to a specific set of options. |
 | **Status Code** | `response.status_code = 404` | Indicating the outcome of the request. |
 | **Body Validation** | `Body(..., min_length=5)` | Enforcing validation constraints on raw inputs. |

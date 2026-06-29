@@ -1,3 +1,4 @@
+from fastapi import Path
 from fastapi import Query
 from typing import List
 from fastapi import Body
@@ -15,7 +16,13 @@ class ProductModel(BaseModel):
 
 @router.post("/{product_id}")
 def create_product(
-    product_id: int,
+    product_id: int = Path(
+        ...,
+        title="The Product ID",
+        description="The unique identifier of the product",
+        ge=1,
+        le=5,
+    ),
     in_stock: Optional[bool] = True,
     product: ProductModel = None,
     content: str = Body(..., min_length=5, max_length=15),
