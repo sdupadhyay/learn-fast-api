@@ -11,12 +11,15 @@ Welcome to your FastAPI learning repository! This document serves as a comprehen
 4. [Query Parameters](#-3-query-parameters)
 5. [Request Body & Pydantic Models](#-4-request-body--pydantic-models)
 6. [Response Customization & Status Codes](#-5-response-customization--status-codes)
+7. [Database Integration (SQLAlchemy ORM)](#-6-database-integration-sqlalchemy-orm)
+8. [Security & Password Hashing](#-7-security--password-hashing)
+9. [Complete CRUD & Auth Reference](#-8-complete-crud--auth-reference)
 
 ---
 
 ## 🛠 Project Setup & Running the App
 
-Since this project is configured with `uv` and has a local virtual environment (`.venv`), you should always run the server using one of the following methods to ensure all dependencies (like `fastapi` and `uvicorn`) are loaded correctly.
+Since this project is configured with `uv` and has a local virtual environment (`.venv`), you should always run the server using one of the following methods to ensure all dependencies (like `fastapi`, `uvicorn`, `sqlalchemy`, and `passlib`) are loaded correctly.
 
 ### Method 1: Using `uv run` (Recommended)
 ```bash
@@ -29,8 +32,6 @@ source .venv/bin/activate
 uvicorn main:app --reload
 ```
 
-> **Note:** The `--reload` flag tells Uvicorn to watch your files for changes and automatically restart the server when you save.
-
 ---
 
 ## 🧩 1. Application & Router Setup
@@ -42,34 +43,6 @@ Instead of putting all routes in a single `main.py` file, FastAPI allows you to 
 *   **`APIRouter()`**: A mini-application class to group related routes (e.g., users, products).
 *   **`prefix`**: Automatically prepends a path to all routes in the router.
 *   **`tags`**: Categorizes routes in the auto-generated Swagger UI documentation (`/docs`).
-
-### 💻 Code Example
-
-**In `routers/user_get_routes.py`:**
-```python
-from fastapi import APIRouter
-
-# Setup router with prefix and tags
-router = APIRouter(prefix="/user", tags=["user"])
-
-@router.get("/all")
-def get_all_user():
-    return {"message": "All Users"}
-```
-
-**In `main.py`:**
-```python
-from fastapi import FastAPI
-from routers import user_get_routes, product_routes, product_post, user_post_routes
-
-app = FastAPI()
-
-# Include the routers into the main app
-app.include_router(user_get_routes.router)
-app.include_router(product_routes.router)
-app.include_router(product_post.router)
-app.include_router(user_post_routes.router)  # New POST routes router
-```
 
 ---
 
@@ -86,71 +59,11 @@ Path parameters are dynamic parts of the URL. They are defined using curly brace
     *   `lt`: Less than
     *   `le`: Less than or equal to (e.g., `le=5`)
 
-### 💻 Code Example
-
-#### Basic Path Parameter with Enum
-```python
-from enum import Enum
-
-class UserRole(str, Enum):
-    admin = "admin"
-    editor = "editor"
-    viewer = "viewer"
-
-@router.get("/role/{role}")
-def get_user(role: UserRole):
-    return {"message": f"The user role is {role.value}"}
-```
-
-#### Advanced Path Parameter Validation using `Path`
-```python
-from fastapi import Path
-
-@router.post("/{product_id}")
-def create_product(
-    product_id: int = Path(
-        ...,                             # '...' means the parameter is required
-        title="The Product ID",
-        description="The unique identifier of the product",
-        ge=1,                            # Must be >= 1
-        le=5,                            # Must be <= 5
-    )
-):
-    return {"product_id": product_id}
-```
-
 ---
 
 ## 🔍 3. Query Parameters
 
 Query parameters are key-value pairs that appear after the `?` in the URL (e.g., `/products?page=2&category=electronics`). Any function arguments that are **not** part of the path path parameters are automatically treated as query parameters.
-
-### 📝 Key Concepts
-*   **Default Values**: Assigning a value (like `page: int = 1`) makes the parameter optional and provides a default.
-*   **Optional Parameters**: Use `Optional[Type] = None` from the `typing` module to make a parameter completely optional.
-*   **Query List Validation**: Use `Query(...)` to declare required query parameters or collections.
-
-### 💻 Code Example
-
-```python
-from typing import Optional, List
-from fastapi import Query
-
-@router.get("/all")
-def get_products(
-    page: int = 1,                         # Optional with default 1
-    category: Optional[str] = None,         # Completely optional
-    in_stock: Optional[bool] = True        # Optional with default True
-):
-    return {"page": page, "category": category, "in_stock": in_stock}
-
-# Query parameter expecting a list: /products/search?versions=v1&versions=v2
-@router.get("/search")
-def search_products(
-    versions: List[str] = Query(...)       # '...' means it is REQUIRED
-):
-    return {"versions": versions}
-```
 
 ---
 
@@ -158,98 +71,337 @@ def search_products(
 
 To receive JSON data from the client, you use **Pydantic** models. Pydantic validates the structure and types of the incoming JSON.
 
-### 📝 Key Concepts
-*   **`BaseModel`**: The base class for defining schemas.
-*   **`Body(...)`**: Used to declare a single, raw body parameter with validation rules (like `min_length`, `max_length`).
-*   **Nested Pydantic Models**: You can use a Pydantic model as a type inside another Pydantic model to handle nested JSON structures.
-*   **Specialized Types (`EmailStr`)**: You can use `EmailStr` for email validation (requires `pydantic[email]` package to be installed).
-*   **Complex Collections**: Define types using `List[str]`, `Dict[str, str]`, etc.
-
-### 💻 Code Example
-
-#### Basic Model & Body Parameter
-```python
-from pydantic import BaseModel
-from fastapi import Body
-
-class ProductModel(BaseModel):
-    name: str
-    price: int
-
-@router.post("/{product_id}")
-def create_product(
-    product: ProductModel = None,
-    content: str = Body(..., min_length=5, max_length=15)
-):
-    return {"product": product, "content": content}
-```
-
-#### Nested Models, Lists, Dicts & EmailStr
-```python
-from typing import Optional, List, Dict
-from pydantic import BaseModel, EmailStr
-
-# 1. Nested Model
-class Address(BaseModel):
-    city: str
-    state: str
-    pincode: int
-
-# 2. Main Model
-class UserCreate(BaseModel):
-    name: str
-    email: EmailStr                      # Validates email format (requires: pip install pydantic[email])
-    is_active: Optional[bool] = None
-    roles: List[str]                     # List of strings
-    settings: Dict[str, str]             # Key-Value pairs of strings
-    address: Optional[Address] = None    # Nested Pydantic Model (optional)
-
-@router.post("/create")
-def create_user(user: UserCreate):
-    return {"message": "User created successfully", "user": user}
-```
-
 ---
 
 ## 🚦 5. Response Customization & Status Codes
 
 You can dynamically set HTTP status codes (like `200 OK`, `201 Created`, `404 Not Found`) by injecting the `Response` object or utilizing FastAPI's `status` module.
 
-### 📝 Key Concepts
-*   **`Response`**: Injecting `response: Response` allows you to modify the status code or headers of the response dynamically.
-*   **`status` Module**: Contains human-readable constants for HTTP status codes (e.g., `status.HTTP_200_OK`).
+---
 
-### 💻 Code Example
+## 🗄 6. Database Integration (SQLAlchemy ORM)
+
+Integrating a database using an **Object Relational Mapper (ORM)** like **SQLAlchemy** allows you to interact with database tables using Python classes instead of writing raw SQL queries.
+
+### 🏛 The 4-Layer Architecture
+For a clean database architecture, the project is structured into four distinct layers:
+```mermaid
+graph TD
+    A[1. Database Setup - db/database.py] --> B[2. DB Models - models/]
+    B --> C[3. Pydantic Schemas - schemas/]
+    C --> D[4. CRUD Operations - db/db_user.py]
+    D --> E[5. API Routers - routers/]
+```
+
+---
+
+### 1️⃣ Database Setup & Connection (`db/database.py`)
+This file establishes the connection to the SQLite database and provides a session generator.
 
 ```python
-from fastapi import Response, status
+from sqlalchemy import create_engine
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
 
-@router.get("/{userName}")
-def get_userName(userName: str, response: Response):
-    if userName == "sdupadhyay":
-        response.status_code = status.HTTP_200_OK
-        return {"message": f"Welcome back, {userName}!"}
-    
-    response.status_code = status.HTTP_404_NOT_FOUND
-    return {"message": "User not found"}
+# 1. Database URL
+SQLALCHEMY_DATABASE_URL = "sqlite:///./blog.db"
+
+# 2. Engine: Establishes connection pool
+engine = create_engine(
+    SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
+)
+
+# 3. SessionLocal: Factory for database sessions
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+# 4. Base: Parent class for DB Models
+Base = declarative_base()
+
+# 5. Dependency: Yields db session and closes it after request is finished
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 ```
+
+---
+
+### 2️⃣ Database Models with Relationships (`models/`)
+Database models define the structure of your database tables using Python classes. They inherit from `Base`.
+
+#### One-to-Many Relationship (User ↔ Blogs)
+A **User** can write many **Blogs**, but a **Blog** belongs to a single **User**.
+
+*   **`ForeignKey`**: Defines the relationship at the database table level (links `user_id` in `blogs` to `id` in `users`).
+*   **`relationship`**: Defines a virtual link at the ORM level (allows python to access `user.blogs` or `blog.user` instantly). `back_populates` keeps both sides synchronized.
+
+```python
+# models/user.py
+from sqlalchemy import Column, Integer, String
+from sqlalchemy.orm import relationship
+from db.database import Base
+
+class DbUser(Base):
+    __tablename__ = 'users'
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String)
+    email = Column(String, unique=True)
+    password = Column(String)
+    
+    # Virtual relationship linking to DbBlog
+    blogs = relationship("DbBlog", back_populates="user")
+```
+
+```python
+# models/blog.py
+from sqlalchemy import Column, Integer, String, ForeignKey
+from sqlalchemy.orm import relationship
+from db.database import Base
+
+class DbBlog(Base):
+    __tablename__ = 'blogs'
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String)
+    content = Column(String)
+    
+    # Foreign Key pointing to users table
+    user_id = Column(Integer, ForeignKey('users.id'))
+    
+    # Virtual relationship linking back to DbUser
+    user = relationship("DbUser", back_populates="blogs")
+```
+
+---
+
+### 3️⃣ Pydantic Schemas (`schemas/`)
+Pydantic schemas define the data shape for API requests (inputs) and responses (outputs).
+
+> [!IMPORTANT]
+> **`orm_mode = True`** (in Pydantic v1) or **`from_attributes = True`** (in Pydantic v2) must be specified in the schema's `Config` class. This allows Pydantic to read data directly from SQLAlchemy ORM objects (e.g., `user.username` or `user.blogs`) rather than expecting a standard dictionary.
+
+```python
+# schemas/blog.py
+from pydantic import BaseModel
+
+class Blog(BaseModel):
+    title: str
+    content: str
+
+    class Config:
+        orm_mode = True  # Allows Pydantic to parse SQLAlchemy models
+```
+
+```python
+# schemas/user.py
+from typing import List
+from pydantic import BaseModel
+from schemas.blog import Blog
+
+# Input Schema (When creating a user, we expect password)
+class UserBase(BaseModel):
+    username: str
+    email: str
+    password: str
+
+# Output Schema (When returning user data, we exclude password and include their blogs!)
+class UserDisplay(BaseModel):
+    username: str
+    email: str
+    blogs: List[Blog] = []  # Nested relation output!
+
+    class Config:
+        orm_mode = True
+```
+
+---
+
+### 4️⃣ Automatic Table Creation (`main.py`)
+To automatically create the database tables when the FastAPI application starts up:
+
+```python
+from db.database import engine
+from models import user as user_model
+from models import blog as blog_model
+
+# Create tables in the database if they do not exist
+user_model.Base.metadata.create_all(engine)
+blog_model.Base.metadata.create_all(engine)
+```
+
+---
+
+## 🔑 7. Security & Password Hashing
+
+For security, you must **never** store passwords as plain text. Instead, hash them using a one-way hashing algorithm like `bcrypt`.
+
+### 📝 Key Concepts
+*   **Hashing**: Converting a password into an unreadable string (`hash`) using a salt.
+*   **Verification**: Checking if a login password matches the stored hash.
+
+```python
+# hash.py
+import bcrypt
+
+class Hash:
+    @staticmethod
+    def bcrypt(password: str) -> str:
+        # Encode password string to bytes, generate salt, and hash it
+        pwd_bytes = password.encode('utf-8')
+        salt = bcrypt.gensalt()
+        hashed = bcrypt.hashpw(pwd_bytes, salt)
+        return hashed.decode('utf-8')  # Convert back to string to store in DB
+
+    @staticmethod
+    def verify_password(password: str, hashed_password: str) -> bool:
+        pwd_bytes = password.encode('utf-8')
+        hashed_bytes = hashed_password.encode('utf-8')
+        return bcrypt.checkpw(pwd_bytes, hashed_bytes)
+```
+
+---
+
+## 🔄 8. Complete CRUD & Auth Reference
+
+Here is how to perform all CRUD (Create, Read, Update, Delete) and Authentication operations.
+
+### 1. Create (POST)
+To save a new record, instantiate the database model, add it to the session, commit, and refresh to retrieve the auto-generated ID.
+
+*   **CRUD Operation (`db/db_user.py`):**
+    ```python
+    def create_user(db: Session, request: UserBase):
+        new_user = DbUser(
+            username=request.username,
+            email=request.email,
+            password=Hash.bcrypt(request.password)  # Hashed password
+        )
+        db.add(new_user)
+        db.commit()
+        db.refresh(new_user)  # Updates new_user with the database-generated ID
+        return new_user
+    ```
+*   **Router (`routers/user.py`):**
+    ```python
+    @router.post("/", response_model=UserDisplay)
+    def create_user(request: UserBase, db: Session = Depends(get_db)):
+        return db_user.create_user(db, request)
+    ```
+
+### 2. Read All & Read One (GET)
+*   **CRUD Operation:**
+    ```python
+    # Fetch all users
+    def get_all_users(db: Session):
+        return db.query(DbUser).all()
+
+    # Fetch a single user by ID
+    def get_user(db: Session, id: int):
+        user = db.query(DbUser).filter(DbUser.id == id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        return user
+    ```
+*   **Router:**
+    ```python
+    @router.get("/", response_model=List[UserDisplay])
+    def get_all_users(db: Session = Depends(get_db)):
+        return db_user.get_all_users(db)
+
+    @router.get("/{id}", response_model=UserDisplay)
+    def get_user(id: int, db: Session = Depends(get_db)):
+        return db_user.get_user(db, id)
+    ```
+
+### 3. Update (PUT & PATCH)
+*   **`PUT`**: Used for full updates (replaces all fields).
+*   **`PATCH`**: Used for partial updates (only updates fields that are provided).
+
+*   **CRUD Operation:**
+    ```python
+    # Partial Update (PATCH)
+    def update_user_partially(db: Session, id: int, request: UserPartial):
+        user = db.query(DbUser).filter(DbUser.id == id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Check each field and update if provided
+        if request.username is not None:
+            user.username = request.username
+        if request.email is not None:
+            user.email = request.email
+        if request.password is not None:
+            user.password = Hash.bcrypt(request.password)
+            
+        db.commit()
+        db.refresh(user)
+        return user
+    ```
+*   **Router:**
+    ```python
+    @router.patch("/{id}", response_model=UserDisplay)
+    def update_user_partially(id: int, request: UserPartial, db: Session = Depends(get_db)):
+        return db_user.update_user_partially(db, id, request)
+    ```
+
+### 4. Delete (DELETE)
+*   **CRUD Operation:**
+    ```python
+    def delete_user(db: Session, id: int):
+        user = db.query(DbUser).filter(DbUser.id == id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        db.delete(user)
+        db.commit()
+        return {"message": "User deleted successfully"}
+    ```
+*   **Router:**
+    ```python
+    @router.delete("/{id}")
+    def delete_user(id: int, db: Session = Depends(get_db)):
+        return db_user.delete_user(db, id)
+    ```
+
+### 5. Authentication (Login)
+*   **CRUD Operation:**
+    ```python
+    def login_user(db: Session, email: str, password: str):
+        user = db.query(DbUser).filter(DbUser.email == email).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Verify password
+        if not Hash.verify_password(password, user.password):
+            raise HTTPException(status_code=401, detail="Invalid password")
+            
+        return {"username": user.username, "message": "Login successful"}
+    ```
+*   **Router (`routers/auth.py`):**
+    ```python
+    @router.post("/login")
+    def login(request: Login, db: Session = Depends(get_db)):
+        return db_user.login_user(db, request.email, request.password)
+    ```
 
 ---
 
 ## 📖 Quick Reference Cheat Sheet
 
-| Feature | Syntax Example | Use Case / Constraints |
+| Feature | SQLAlchemy Code | Purpose |
 | :--- | :--- | :--- |
-| **Path Parameter** | `/items/{item_id}` | Identifying a specific resource. |
-| **Path Validation** | `item_id: int = Path(..., ge=1, le=5)` | Restricting path variables numerically. |
-| **Query Parameter** | `/items?limit=10` | Filtering, sorting, or paginating results. |
-| **Request Body** | `item: ItemModel` | Creating or updating resources with structured JSON. |
-| **Nested Models** | `address: Optional[Address]` | Handling complex, nested JSON payloads. |
-| **Specialized Types** | `email: EmailStr` | Out-of-the-box email validation. |
-| **Enum Parameter** | `role: UserRole` | Restricting inputs to a specific set of options. |
-| **Status Code** | `response.status_code = 404` | Indicating the outcome of the request. |
-| **Body Validation** | `Body(..., min_length=5)` | Enforcing validation constraints on raw inputs. |
+| **Create Connection** | `create_engine(URL)` | Connects SQLAlchemy to SQLite database. |
+| **Generate Session** | `sessionmaker(bind=engine)` | Factory for creating DB sessions. |
+| **Dependency Injection** | `db: Session = Depends(get_db)` | Injects DB session into a route. |
+| **DB Models Base** | `class DbModel(Base):` | Base class to define database tables. |
+| **Pydantic ORM mode** | `orm_mode = True` | Allows Pydantic to read SQLAlchemy models. |
+| **Add & Save** | `db.add(obj)`, `db.commit()` | Saves a new record to the database. |
+| **Fetch All** | `db.query(Model).all()` | Returns all records from a table. |
+| **Filter Records** | `db.query(Model).filter(...)` | Queries records with conditions (like SQL WHERE). |
+| **Delete Record** | `db.delete(obj)` | Removes a record from the database. |
+| **Relationship** | `relationship("Model", back_populates="...")` | Creates virtual links between tables. |
+| **Password Hash** | `bcrypt.hashpw(...)` | Hashes passwords securely. |
 
 ---
 
-*Keep this notes file updated as you learn more advanced concepts like Dependency Injection, Database Integration (SQLAlchemy), and Authentication!* 😄
+*Keep this notes file updated as you learn more advanced database concepts like Migrations (Alembic), OAuth2 JWT Authentication, and Async Databases!* 😄
