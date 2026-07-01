@@ -1,3 +1,7 @@
+from fastapi import UploadFile
+from fastapi import File
+from pydantic import BaseModel
+from fastapi import Form
 from pydantic._internal import _model_construction
 from fastapi import APIRouter, Response, status
 from enum import Enum
@@ -28,4 +32,37 @@ def search_products(
 ):
     return {
         "message": f"Fetching products in category '{category}' with price between {min_price}-{max_price}, sorted by {sort_by} in {order} order, page {page} with {page_size} items per page"
+    }
+
+
+@router.post("/create")
+def create_product(
+    name: str = Form(...),
+    brand_name: str = Form(...),
+    price: Optional[float] = Form(...),
+    image: UploadFile = File(...)
+):
+    return {
+        "name": name,
+        "brand_name": brand_name,
+        "price": price,
+        "image":image.filename,
+        "message": "Product created successfully",
+    }
+
+
+## Sample example where we are taking data from the json instead of form
+class ProductSchema(BaseModel):
+    name: str
+    price: int
+    company_name: str
+
+
+@router.post("/create-json")
+def create_product_json(product: ProductSchema):
+    return {
+        "name": product.name,
+        "brand_name": product.company_name,
+        "price": product.price,
+        "message": "Product created successfully",
     }

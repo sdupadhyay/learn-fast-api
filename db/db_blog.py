@@ -8,7 +8,7 @@ def create_blog(db:Session,request:Blog,user_id):
         # id=uuid4(),
         title=request.title,
         content=request.content,
-        user_id=1
+        user_id=user_id
     )
     db.add(new_blog)
     db.commit()

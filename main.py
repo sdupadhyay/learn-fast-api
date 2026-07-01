@@ -6,9 +6,17 @@ from routers import blog as blog_router
 from routers import auth as auth_router
 from models import user as user_model
 from models import blog as blog_model
+from fastapi.middleware.cors import CORSMiddleware
+
 
 app = FastAPI()
-
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.include_router(user_get_routes.router)
 app.include_router(product_routes.router)
 app.include_router(product_post.router)
