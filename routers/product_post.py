@@ -1,3 +1,4 @@
+from pydantic import Field
 from fastapi import Path
 from fastapi import Query
 from typing import List
@@ -12,6 +13,12 @@ router = APIRouter(prefix="/products", tags=["product"])
 class ProductModel(BaseModel):
     name: str
     price: int
+
+
+class ProductReviewModel(BaseModel):
+    username: str
+    rating: int = Field(ge=1, le=5)
+    comment: str
 
 
 @router.post("/{product_id}")
@@ -35,4 +42,30 @@ def create_product(
         "product_details": product,
         "content": content,
         "List": versions,
+    }
+
+
+@router.post("/review/{product_category}")
+def submit_review(
+    product_category: str = Path(
+        ...,
+        title="The Product Category",
+        description="The unique identifier of the product",
+    ),
+    min_price: float = Query(
+        ..., gt=0, title="Minimum Price", description="The minimum price of the product"
+    ),
+    max_price: float = Query(
+        ..., gt=0, title="Maximum Price", description="The maximum price of the product"
+    ),
+    user_reviews: List[ProductReviewModel] = [],
+):
+    return {
+        "product_category": product_category,
+        "price_range": {
+            "min": min_price,
+            "max": max_price,
+        },
+        "total_reviews": len(user_reviews),
+        "reviews": user_reviews,
     }

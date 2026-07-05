@@ -1,9 +1,10 @@
+from routers import booking
 from time import time
 from fastapi import Request
 from routers import handle_file
 from db.database import engine
 from fastapi import FastAPI
-from routers import user_get_routes, product_routes, product_post, user_post_routes
+from routers import user_get_routes, product_routes, product_post, user_post_routes, food_order_api
 from routers import user as user_router
 from routers import blog as blog_router
 from routers import auth as auth_router
@@ -38,7 +39,8 @@ app.include_router(user_router.router)
 app.include_router(blog_router.router)
 app.include_router(auth_router.router)
 app.include_router(handle_file.router)
-
+app.include_router(food_order_api.router)
+app.include_router(booking.router)
 @app.get("/")
 def get_started():
     return {"Message": "Hello World"}

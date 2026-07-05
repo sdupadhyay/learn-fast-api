@@ -37,24 +37,11 @@ source .venv/bin/activate
 uvicorn main:app --reload
 ```
 
-### Method 3: Packages Needed for Security & Uploads
-To install new dependencies like file upload processors, token signing utilities, and static file routers:
-```bash
-uv pip install python-multipart python-jose fastapi
-# Or using standard pip:
-pip install python-multipart python-jose[cryptography]
-```
-
 ---
 
 ## 🧩 1. Application & Router Setup
 
 Instead of putting all routes in a single `main.py` file, FastAPI allows you to modularize your code using **`APIRouter`**. This keeps your codebase clean and scalable.
-
-*   **`FastAPI()`**: The core application class that binds everything.
-*   **`APIRouter()`**: A mini-application class to group related routes (e.g., users, products).
-*   **`prefix`**: Automatically prepends a path to all routes in the router.
-*   **`tags`**: Categorizes routes in the auto-generated Swagger UI documentation (`/docs`).
 
 ---
 
@@ -80,7 +67,84 @@ Query parameters are key-value pairs that appear after the `?` in the URL (e.g.,
 
 ## 📦 4. Request Body & Pydantic Models
 
-To receive JSON data from the client, you use **Pydantic** models. Pydantic validates the structure and types of the incoming JSON.
+To receive JSON data from the client, you use **Pydantic** models. Pydantic validates the structure and types of the incoming JSON payloads.
+
+### 📝 Key Concepts
+*   **`BaseModel`**: The base class for defining schemas.
+*   **`Body(...)`**: Used to declare a single, raw body parameter with validation rules.
+*   **Nested Pydantic Models**: You can nest schemas inside other schemas.
+*   **`Field` Validation**: You can use `Field` from `pydantic` to apply validation rules directly to schema attributes (e.g. `gt=0`, `ge=1`, `le=5`).
+*   **Custom Field Validators (`@field_validator`)**: You can write custom functions to validate fields using complex logic or regex.
+
+### 💻 Code Example
+
+#### A. Basic Model & Body Parameter
+```python
+from pydantic import BaseModel
+from fastapi import Body
+
+class ProductModel(BaseModel):
+    name: str
+    price: int
+
+@router.post("/{product_id}")
+def create_product(
+    product: ProductModel = None,
+    content: str = Body(..., min_length=5, max_length=15)
+):
+    return {"product": product, "content": content}
+```
+
+#### B. Model Validation using `Field` and `@field_validator` (`schemas/booking_schema.py`)
+```python
+import re
+from pydantic import BaseModel, Field, field_validator
+
+class Booking(BaseModel):
+    movie_name: str
+    seats: int = Field(gt=0)                   # Seats must be greater than 0
+    show_time: str                             # Expected HH:MM 24-hr format
+
+    # Custom validator using @field_validator (Pydantic v2 style)
+    @field_validator("show_time")
+    @classmethod
+    def validate_show_time(cls, value: str) -> str:
+        if not re.match(r"^(?:[01]\d|2[0-3]):[0-5]\d$", value):
+            raise ValueError("show_time must be in HH:MM format (24-hour clock)")
+        return value
+```
+
+#### C. Route Combining Path, Query, and Request Body (`routers/product_post.py`)
+FastAPI allows you to combine multiple input sources (Path, Query, and Request Body) in a single request seamlessly.
+
+```python
+from fastapi import APIRouter, Path, Query
+from typing import List
+from pydantic import BaseModel, Field
+
+router = APIRouter(prefix="/products", tags=["product"])
+
+class ProductReviewModel(BaseModel):
+    username: str
+    rating: int = Field(ge=1, le=5)           # Rating must be between 1 and 5
+    comment: str
+
+@router.post("/review/{product_category}")
+def submit_review(
+    product_category: str = Path(             # 1. Path Parameter
+        ...,
+        title="Product Category"
+    ),
+    min_price: float = Query(..., gt=0),      # 2. Query Parameter (with gt validation)
+    max_price: float = Query(..., gt=0),      # 2. Query Parameter
+    user_reviews: List[ProductReviewModel] = [] # 3. Request Body (List of Models)
+):
+    return {
+        "category": product_category,
+        "price_range": {"min": min_price, "max": max_price},
+        "reviews": user_reviews
+    }
+```
 
 ---
 
@@ -88,57 +152,11 @@ To receive JSON data from the client, you use **Pydantic** models. Pydantic vali
 
 FastAPI allows receiving Form fields instead of JSON, which is crucial for handling file uploads or standard HTML form submissions.
 
-> [!IMPORTANT]
-> To receive uploaded files or form fields, you **must** install `python-multipart`.
-
-### 📝 Key Concepts
-*   **`Form`**: Declares that the input parameter should be read from the HTML form data rather than JSON.
-*   **`File`**: Declares a file parameter.
-*   **`bytes` vs `UploadFile`**:
-    *   **`bytes`**: Reads the entire file into memory as raw bytes. Best for small files (e.g., text, small images).
-    *   **`UploadFile`**: Reads the file in chunks and buffers it to disk if it's too large, preserving system memory. Provides access to `filename`, `content_type`, and a file-like object `file`. Recommended for all general uploads.
-
-### 💻 Code Example (`routers/handle_file.py`)
-
-#### Option A: Reading file contents directly as `bytes`
-```python
-from fastapi import APIRouter, File
-
-router = APIRouter(tags=["Handle File"], prefix="/file")
-
-@router.post("/")
-def get_file(file: bytes = File(...)):
-    # Decode raw bytes into UTF-8 text and split by newlines
-    content = file.decode("utf-8")
-    content_lines = content.split("\n")
-    return {"content": content_lines}
-```
-
-#### Option B: Uploading and saving a file locally (`UploadFile`)
-```python
-import shutil
-from fastapi import APIRouter, File, UploadFile
-
-@router.post("/upload")
-def upload_file(upload_file: UploadFile = File(...)):
-    # Define local path where the file should be saved
-    path = f"uploaded_files/{upload_file.filename}"
-    
-    # Save the file using Python's open() and shutil to copy binary stream
-    with open(path, "w+b") as buffer:
-        shutil.copyfileobj(upload_file.file, buffer)
-        
-    return {"file_name": upload_file.filename}
-```
-
 ---
 
 ## 🌐 6. HTTP Headers (Request & Response)
 
 HTTP headers are used to pass metadata between the client and server.
-
-*   **`Header`**: Declares a header parameter. FastAPI automatically maps snake_case variable names (like `custom_header`) to kebab-case HTTP headers (like `Custom-Header`).
-*   **`Response`**: Injecting `response: Response` lets you add custom headers dynamically to the HTTP response.
 
 ---
 
@@ -146,52 +164,11 @@ HTTP headers are used to pass metadata between the client and server.
 
 Middleware is a function that runs before every request is processed by the path operations, and after every response is generated by the path operations.
 
-### 📝 Key Concepts
-*   **`@app.middleware("http")`**: Registers a function as an HTTP middleware.
-*   **`call_next`**: A function that receives the `request` and passes it to the path operation, returning the generated `response`.
-
-### 💻 Code Example (`main.py`)
-```python
-import time
-from fastapi import Request
-
-@app.middleware("http")
-async def log_request(request: Request, call_next):
-    # 1. Run code BEFORE the request goes to the router
-    start_time = time.time()
-    
-    # 2. Forward the request to get the response
-    response = await call_next(request)
-    
-    # 3. Run code AFTER the router finishes (e.g. calculate execution time)
-    duration = time.time() - start_time
-    print(f"Request: {request.url} | Time Taken: {duration:.4f} seconds")
-    
-    # 4. Return the response to the client
-    return response
-```
-
-> [!NOTE]
-> **Common Pitfall / Debugging Tip:** If you import time as `from time import time`, using `time.time()` will fail because `time` is now the float timestamp function directly, not the module. Use `start_time = time()` instead of `time.time()` if you imported it this way!
-
 ---
 
 ## 📂 8. Static Files Serving
 
 FastAPI allows you to expose folders on your server so that static files (like uploaded images, stylesheets, or scripts) can be accessed directly from a URL.
-
-### 📝 Key Concepts
-*   **`StaticFiles`**: The class used to serve directory contents.
-*   **`app.mount(url_path, StaticFiles(directory=...), name=...)`**: Mounts an independent sub-application to handle requests matching the `url_path`.
-
-### 💻 Code Example (`main.py`)
-```python
-from fastapi.staticfiles import StaticFiles
-
-# Expose the local "uploaded_files" directory at the "/files" path
-# Example: Exposes "uploaded_files/pic.jpg" as "http://127.0.0.1:8000/files/pic.jpg"
-app.mount("/files", StaticFiles(directory="uploaded_files"), name="files")
-```
 
 ---
 
@@ -229,6 +206,10 @@ Here is how to perform all CRUD (Create, Read, Update, Delete) and Authenticatio
 
 | Feature | Syntax / Method | Purpose |
 | :--- | :--- | :--- |
+| **Field Constraints** | `price: float = Field(gt=0)` | Apply numeric, length, or metadata rules directly to model fields. |
+| **Custom Validator** | `@field_validator("field_name")` | Pydantic v2 decorator to implement custom checks (e.g. regex). |
+| **Path parameter** | `Path(..., title="...")` | Adds constraints & metadata to URL path variables. |
+| **Query parameter** | `Query(..., gt=0)` | Adds constraints & metadata to URL query parameters. |
 | **Bytes File** | `file: bytes = File(...)` | Reads whole file directly into memory as bytes (Text/CSV). |
 | **UploadFile** | `upload_file: UploadFile = File(...)` | Streams files (handles large files safely, metadata access). |
 | **File Buffer Copy** | `shutil.copyfileobj(file1, file2)` | Copies a binary file stream buffer efficiently. |
