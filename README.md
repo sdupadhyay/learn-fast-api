@@ -18,7 +18,8 @@ Welcome to your FastAPI learning repository! This document serves as a comprehen
 11. [Database Integration (SQLAlchemy ORM)](#-10-database-integration-sqlalchemy-orm)
 12. [Security & Password Hashing](#-11-security--password-hashing)
 13. [JWT (JSON Web Token) Authentication](#-12-jwt-json-web-token-authentication)
-14. [Complete CRUD & Auth Reference](#-13-complete-crud--auth-reference)
+14. [Cookie-Based Session Management (Basic)](#-13-cookie-based-session-management-basic)
+15. [Complete CRUD & Auth Reference](#-14-complete-crud--auth-reference)
 
 ---
 
@@ -76,76 +77,6 @@ To receive JSON data from the client, you use **Pydantic** models. Pydantic vali
 *   **`Field` Validation**: You can use `Field` from `pydantic` to apply validation rules directly to schema attributes (e.g. `gt=0`, `ge=1`, `le=5`).
 *   **Custom Field Validators (`@field_validator`)**: You can write custom functions to validate fields using complex logic or regex.
 
-### 💻 Code Example
-
-#### A. Basic Model & Body Parameter
-```python
-from pydantic import BaseModel
-from fastapi import Body
-
-class ProductModel(BaseModel):
-    name: str
-    price: int
-
-@router.post("/{product_id}")
-def create_product(
-    product: ProductModel = None,
-    content: str = Body(..., min_length=5, max_length=15)
-):
-    return {"product": product, "content": content}
-```
-
-#### B. Model Validation using `Field` and `@field_validator` (`schemas/booking_schema.py`)
-```python
-import re
-from pydantic import BaseModel, Field, field_validator
-
-class Booking(BaseModel):
-    movie_name: str
-    seats: int = Field(gt=0)                   # Seats must be greater than 0
-    show_time: str                             # Expected HH:MM 24-hr format
-
-    # Custom validator using @field_validator (Pydantic v2 style)
-    @field_validator("show_time")
-    @classmethod
-    def validate_show_time(cls, value: str) -> str:
-        if not re.match(r"^(?:[01]\d|2[0-3]):[0-5]\d$", value):
-            raise ValueError("show_time must be in HH:MM format (24-hour clock)")
-        return value
-```
-
-#### C. Route Combining Path, Query, and Request Body (`routers/product_post.py`)
-FastAPI allows you to combine multiple input sources (Path, Query, and Request Body) in a single request seamlessly.
-
-```python
-from fastapi import APIRouter, Path, Query
-from typing import List
-from pydantic import BaseModel, Field
-
-router = APIRouter(prefix="/products", tags=["product"])
-
-class ProductReviewModel(BaseModel):
-    username: str
-    rating: int = Field(ge=1, le=5)           # Rating must be between 1 and 5
-    comment: str
-
-@router.post("/review/{product_category}")
-def submit_review(
-    product_category: str = Path(             # 1. Path Parameter
-        ...,
-        title="Product Category"
-    ),
-    min_price: float = Query(..., gt=0),      # 2. Query Parameter (with gt validation)
-    max_price: float = Query(..., gt=0),      # 2. Query Parameter
-    user_reviews: List[ProductReviewModel] = [] # 3. Request Body (List of Models)
-):
-    return {
-        "category": product_category,
-        "price_range": {"min": min_price, "max": max_price},
-        "reviews": user_reviews
-    }
-```
-
 ---
 
 ## 📥 5. Form Data & File Uploads
@@ -157,6 +88,9 @@ FastAPI allows receiving Form fields instead of JSON, which is crucial for handl
 ## 🌐 6. HTTP Headers (Request & Response)
 
 HTTP headers are used to pass metadata between the client and server.
+
+*   **`Header`**: Declares a header parameter. FastAPI automatically maps snake_case variable names (like `custom_header`) to kebab-case HTTP headers (like `Custom-Header`).
+*   **`Response`**: Injecting `response: Response` lets you add custom headers dynamically to the HTTP response.
 
 ---
 
@@ -196,7 +130,70 @@ FastAPI uses **OAuth2** flows for authentication. JSON Web Tokens (JWT) are sign
 
 ---
 
-## 🔄 13. Complete CRUD & Auth Reference
+## 🍪 13. Cookie-Based Session Management (Basic)
+
+An alternative to token-based authentication is **Cookie-based Session Management**. The server generates a unique session identifier and sends it to the client inside an HTTP response cookie. The browser automatically appends this cookie to every future request to the same domain.
+
+### 📝 Key Concepts
+*   **`response.set_cookie`**: Writes a cookie onto the client browser.
+*   **`Cookie`**: FastAPI utility used to parse and inject incoming request cookies.
+*   **`response.delete_cookie`**: Instructs the browser to remove the cookie (essential for logging out).
+*   **`uuid`**: Standard Python module to generate unique identifiers (UUIDs) for sessions.
+
+### 💻 Code Example (`routers/authentication.py`)
+
+```python
+import uuid
+from fastapi import APIRouter, Response, Cookie, HTTPException, status
+from pydantic import BaseModel
+
+router = APIRouter(prefix="/authentication", tags=["authentication"])
+
+class UserDetails(BaseModel):
+    username: str
+    password: str
+
+# 1. Login Endpoint (Writing a Session Cookie)
+@router.post("/login")
+def auth_user(user: UserDetails, response: Response):
+    if user.username == "admin" and user.password == "secret":
+        session_id = str(uuid.uuid4()) # Generate a random session ID
+        response.set_cookie(key="session_id", value=session_id) # Write Cookie
+        response.headers["X-Login-Status"] = "Success"
+        return "Authentication successful"
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED, 
+        detail="Invalid Credentials"
+    )
+
+# 2. Authenticated Profile Endpoint (Reading a Session Cookie)
+@router.get("/profile")
+def get_profile(session_id: str | None = Cookie(default=None)):
+    if not session_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, 
+            detail="Not logged in"
+        )
+    return {"message": "Session active", "session_id": session_id}
+
+# 3. Logout Endpoint (Deleting a Session Cookie)
+@router.get("/logout")
+def logout_user(response: Response):
+    response.delete_cookie(key="session_id") # Remove Cookie from browser
+    return "You have been logged out."
+```
+
+> [!TIP]
+> **Production Best Practice:** When setting cookies in a production application, always pass security flags to prevent attacks:
+> *   `httponly=True`: Prevents client-side scripts (JS) from reading the cookie, protecting against Cross-Site Scripting (XSS) attacks.
+> *   `secure=True`: Ensures cookies are only sent over encrypted connections (HTTPS).
+> *   `samesite="strict"` or `"lax"`: Helps defend against Cross-Site Request Forgery (CSRF) attacks.
+> 
+> *Example:* `response.set_cookie(key="session_id", value=session_id, httponly=True, secure=True, samesite="lax")`
+
+---
+
+## 🔄 14. Complete CRUD & Auth Reference
 
 Here is how to perform all CRUD (Create, Read, Update, Delete) and Authentication operations.
 
@@ -206,8 +203,12 @@ Here is how to perform all CRUD (Create, Read, Update, Delete) and Authenticatio
 
 | Feature | Syntax / Method | Purpose |
 | :--- | :--- | :--- |
+| **Set Cookie** | `response.set_cookie(key, value)` | Sends a cookie from the server to be stored in the browser. |
+| **Read Cookie** | `session: str = Cookie(None)` | Declares a parameter to read incoming request cookies. |
+| **Delete Cookie** | `response.delete_cookie(key)` | Deletes/expires a cookie on the client browser. |
+| **UUID Generator** | `str(uuid.uuid4())` | Generates a 36-character globally unique random identifier. |
 | **Field Constraints** | `price: float = Field(gt=0)` | Apply numeric, length, or metadata rules directly to model fields. |
-| **Custom Validator** | `@field_validator("field_name")` | Pydantic v2 decorator to implement custom checks (e.g. regex). |
+| **Custom Validator** | `@field_validator("field_name")` | Pydantic v2 decorator to implement custom checks. |
 | **Path parameter** | `Path(..., title="...")` | Adds constraints & metadata to URL path variables. |
 | **Query parameter** | `Query(..., gt=0)` | Adds constraints & metadata to URL query parameters. |
 | **Bytes File** | `file: bytes = File(...)` | Reads whole file directly into memory as bytes (Text/CSV). |

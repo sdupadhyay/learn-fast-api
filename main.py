@@ -1,3 +1,4 @@
+from routers import authentication
 from routers import booking
 from time import time
 from fastapi import Request
@@ -39,8 +40,10 @@ app.include_router(user_router.router)
 app.include_router(blog_router.router)
 app.include_router(auth_router.router)
 app.include_router(handle_file.router)
+# Assignemnt Routes 
 app.include_router(food_order_api.router)
 app.include_router(booking.router)
+app.include_router(authentication.router)
 @app.get("/")
 def get_started():
     return {"Message": "Hello World"}
